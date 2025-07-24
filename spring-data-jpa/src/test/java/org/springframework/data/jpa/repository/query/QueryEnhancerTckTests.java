@@ -118,7 +118,8 @@ abstract class QueryEnhancerTckTests {
 	@ParameterizedTest // GH-2773
 	@MethodSource("jpqlCountQueries")
 	void shouldDeriveJpqlCountQuery(String query, String expected) {
-
+		//지금 여기 테스트 코드가 문제야 아래 쿼리 메서드 가져와서 하니씩 돌려보는데 select 쿼리가 생략된 쿼리면
+		// 내 로직에서는  select 쿼리가 아닌걸로 인지하고 예외를 발생해. 사실은 select 쿼리가 맞는데.
 		QueryEnhancer enhancer = createQueryEnhancer(DeclaredQuery.jpqlQuery(query));
 		String countQueryFor = enhancer.createCountQueryFor(null);
 

@@ -347,7 +347,12 @@ public class JSqlParserQueryEnhancer implements QueryEnhancer {
 		String queryString = query.getQueryString();
 		Assert.hasText(queryString, "Query must not be null or empty");
 
-		if (this.parsedType != ParsedType.SELECT || sort.isUnsorted()) {
+		if (this.parsedType != ParsedType.SELECT) {
+			throw new UnsupportedOperationException(
+					"Cannot apply sorting to non-SELECT queries. Query type not supported for sorting operations");
+		}
+
+		if (sort.isUnsorted()) {
 			return queryString;
 		}
 
@@ -387,7 +392,8 @@ public class JSqlParserQueryEnhancer implements QueryEnhancer {
 	public String createCountQueryFor(@Nullable String countProjection) {
 
 		if (this.parsedType != ParsedType.SELECT) {
-			return this.query.getQueryString();
+			throw new UnsupportedOperationException(
+					"Cannot create count query for non-SELECT queries. Query type not supported for count operations");
 		}
 
 		Assert.hasText(this.query.getQueryString(), "OriginalQuery must not be null or empty");

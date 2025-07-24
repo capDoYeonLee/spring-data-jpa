@@ -196,8 +196,11 @@ class QueryEnhancerUnitTests {
 
 		DefaultEntityQuery query = new TestEntityQuery("delete from some_table where id in :ids", true);
 
-		assertThat(getEnhancer(query).createCountQueryFor("p.lastname"))
-				.isEqualToIgnoringCase("delete from some_table where id in :ids");
+//		assertThat(getEnhancer(query).createCountQueryFor("p.lastname"))
+//				.isEqualToIgnoringCase("delete from some_table where id in :ids");
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> getEnhancer(query).createCountQueryFor("p.lastname"))
+				.withMessageContaining("Cannot create count query for non-SELECT queries. Query type not supported for count operations");
 	}
 
 	@Test // DATAJPA-456
@@ -625,7 +628,10 @@ class QueryEnhancerUnitTests {
 		assertThat(modiQuery.hasConstructorExpression()).isEqualTo(constructorExpressionNotConsideringQueryType);
 
 		assertThat(countQueryForNotConsiderQueryType).isEqualToIgnoringCase(modifyingQuery);
-		assertThat(QueryEnhancer.create(modiQuery).createCountQueryFor(null)).isEqualToIgnoringCase(modifyingQuery);
+//		assertThat(QueryEnhancer.create(modiQuery).createCountQueryFor(null)).isEqualToIgnoringCase(modifyingQuery);
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> QueryEnhancer.create(modiQuery).createCountQueryFor(null))
+				.withMessageContaining("Cannot create count query for non-SELECT queries. Query type not supported for count operations");
 	}
 
 	@ParameterizedTest // GH-2593
@@ -649,8 +655,15 @@ class QueryEnhancerUnitTests {
 		assertThat(stringQuery.hasConstructorExpression()).isFalse();
 
 		// access over enhancer
-		assertThat(queryEnhancer.createCountQueryFor(null)).isEqualToIgnoringCase(queryUtilsCountQuery);
-		assertThat(queryEnhancer.rewrite(getRewriteInformation(sorting))).isEqualTo(insertQuery); // cant check with
+		//assertThat(queryEnhancer.createCountQueryFor(null)).isEqualToIgnoringCase(queryUtilsCountQuery);
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> queryEnhancer.createCountQueryFor(null))
+				.withMessageContaining("Cannot create count query for non-SELECT queries. Query type not supported for count operations");
+
+		//assertThat(queryEnhancer.rewrite(getRewriteInformation(sorting))).isEqualTo(insertQuery); // cant check with
+		assertThatExceptionOfType(UnsupportedOperationException.class)
+				.isThrownBy(() -> queryEnhancer.rewrite(getRewriteInformation(sorting)))
+				.withMessageContaining("Cannot apply sorting to non-SELECT queries. Query type not supported for sorting operations");
 																																															// queryutils result since
 		// query utils appens order by which is not
 		// supported by sql standard.

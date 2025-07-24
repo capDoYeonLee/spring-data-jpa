@@ -30,6 +30,7 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.TokenStream;
 import org.antlr.v4.runtime.atn.PredictionMode;
 import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeVisitor;
 import org.jspecify.annotations.Nullable;
 
@@ -220,6 +221,12 @@ class JpaQueryEnhancer<Q extends QueryInformation> implements QueryEnhancer {
 
 	@Override
 	public String rewrite(QueryRewriteInformation rewriteInformation) {
+
+		if (!isSelectQuery(this.context)) {
+			throw new UnsupportedOperationException(
+					"Cannot apply sorting to non-SELECT queries. Query type not supported for sorting operations");
+		}
+
 		return QueryRenderer.TokenRenderer.render(
 				sortFunction.apply(rewriteInformation.getSort(), this.queryInformation, rewriteInformation.getReturnedType())
 						.visit(context));
@@ -232,8 +239,39 @@ class JpaQueryEnhancer<Q extends QueryInformation> implements QueryEnhancer {
 	 */
 	@Override
 	public String createCountQueryFor(@Nullable String countProjection) {
+
+		if (!isSelectQuery(this.context)) {
+			throw new UnsupportedOperationException(
+					"Cannot create count query for non-SELECT queries. Query type not supported for count operations");
+		}
+
 		return QueryRenderer.TokenRenderer
 				.render(countQueryFunction.apply(countProjection, this.queryInformation).visit(context));
+	}
+
+	/**
+	 * Determines whether the parsed query represents a SELECT statement.
+	 * This method supports JPQL, HQL, and EQL query languages.
+	 *
+	 * @param context the root parser context to check.
+	 * @return {@literal true} if the query is a SELECT statement, {@literal false} otherwise.
+	 */
+	private static boolean isSelectQuery(ParserRuleContext ctx) {
+		ParseTree statement = ctx.getChild(0);
+
+		if (statement instanceof HqlParser.Ql_statementContext hql) {
+			return hql.getChild(0) instanceof HqlParser.SelectStatementContext;
+		}
+
+		if (statement instanceof JpqlParser.Ql_statementContext jpql) {
+			return jpql.getChild(0) instanceof JpqlParser.Select_statementContext;
+		}
+
+		if (statement instanceof EqlParser.Ql_statementContext eql) {
+			return eql.getChild(0) instanceof EqlParser.Select_statementContext;
+		}
+
+		return false;
 	}
 
 	/**

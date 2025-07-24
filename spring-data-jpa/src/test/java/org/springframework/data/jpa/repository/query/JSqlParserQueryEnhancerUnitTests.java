@@ -238,8 +238,14 @@ class JSqlParserQueryEnhancerUnitTests extends QueryEnhancerTckTests {
 		assertThat(query.getProjection()).isEmpty();
 		assertThat(query.hasConstructorExpression()).isFalse();
 
-		assertThat(queryEnhancer.rewrite(getRewriteInformation(Sort.by("day").descending())))
-				.isEqualTo("TRUNCATE TABLE foo");
+//		assertThat(queryEnhancer.rewrite(getRewriteInformation(Sort.by("day").descending())))
+//				.isEqualTo("TRUNCATE TABLE foo");
+
+		// TRUNCATE 문에 정렬이 적용될 때 UnsupportedOperationException이 발생하는지 검증
+		assertThatThrownBy(() -> queryEnhancer.rewrite(getRewriteInformation(Sort.by("day").descending())))
+				.isInstanceOf(UnsupportedOperationException.class)
+				.hasMessageContaining("Cannot apply sorting to non-SELECT queries");
+
 		assertThat(queryEnhancer.detectAlias()).isNull();
 		assertThat(queryEnhancer.getProjection()).isEmpty();
 		assertThat(queryEnhancer.hasConstructorExpression()).isFalse();
