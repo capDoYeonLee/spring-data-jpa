@@ -78,20 +78,9 @@ class DefaultQueryEnhancer implements QueryEnhancer {
 
 		String trimmedQuery = queryString.trim().toLowerCase(Locale.ENGLISH);
 
-		if (trimmedQuery.startsWith("delete") ||
-				trimmedQuery.startsWith("update") ||
-				trimmedQuery.startsWith("insert") ||
-				trimmedQuery.startsWith("create") ||
-				trimmedQuery.startsWith("drop") ||
-				trimmedQuery.startsWith("alter") ||
-				trimmedQuery.startsWith("truncate")) {
-			return false;
-		}
+		Pattern aliasPattern = Pattern.compile("from\\s+\\w+\\s+([a-zA-Z]\\w*)(?=\\s|$|\\W)");
 
-		Pattern aliasPattern = Pattern.compile("^from\\s+\\w+\\s+([a-zA-Z]\\w*)(?=\\s|$|\\W)");
-		//Pattern aliasPattern = Pattern.compile("^from\\s+\\w+\\s+\\w+(?=\\s|$)", Pattern.CASE_INSENSITIVE);
-
-		return trimmedQuery.startsWith("select") || trimmedQuery.startsWith("with") || aliasPattern.matcher(trimmedQuery).find();
+		return trimmedQuery.startsWith("select") || trimmedQuery.startsWith("with") || aliasPattern.matcher(queryString).find();
 	}
 
 	@Override
