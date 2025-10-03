@@ -44,6 +44,7 @@ import org.springframework.util.StringUtils;
  * A Domain-Specific Language to build JPQL queries using Java code.
  *
  * @author Mark Paluch
+ * @author Choi Wang Gyu
  */
 @SuppressWarnings("JavadocDeclaration")
 public final class JpqlQueryBuilder {
@@ -141,6 +142,7 @@ public final class JpqlQueryBuilder {
 			Selection postProcess(Selection selection) {
 				return distinct ? new DistinctSelection(selection) : selection;
 			}
+
 		};
 	}
 
@@ -298,6 +300,7 @@ public final class JpqlQueryBuilder {
 	public static WhereStep where(Expression rhs) {
 
 		return new WhereStep() {
+
 			@Override
 			public Predicate between(Expression lower, Expression upper) {
 				return new BetweenPredicate(rhs, lower, upper);
@@ -392,6 +395,7 @@ public final class JpqlQueryBuilder {
 			public Predicate neq(Expression value) {
 				return new OperatorPredicate(rhs, "!=", value);
 			}
+
 		};
 	}
 
@@ -505,7 +509,9 @@ public final class JpqlQueryBuilder {
 	}
 
 	public interface Selection {
+
 		String render(RenderContext context);
+
 	}
 
 	/**
@@ -524,6 +530,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	static PathAndOrigin path(Origin origin, String path) {
@@ -537,29 +544,28 @@ public final class JpqlQueryBuilder {
 				throw new RuntimeException(e);
 			}
 		}
+
 		if (origin instanceof Join join) {
 
 			Origin parent = join.source;
 			List<String> segments = new ArrayList<>();
 			segments.add(join.path);
 			while (!(parent instanceof Entity)) {
-				if (parent instanceof Join pj) {
-					parent = pj.source;
-					segments.add(pj.path);
+				if (parent instanceof Join parentJoin) {
+					parent = parentJoin.source;
+					segments.add(parentJoin.path);
 				} else {
 					parent = null;
 				}
 			}
 
-			if (parent instanceof Entity) {
-				Collections.reverse(segments);
-				segments.add(path);
-				PathAndOrigin path1 = path(parent, StringUtils.collectionToDelimitedString(segments, "."));
-				return new PathAndOrigin(path1.path().getLeafProperty(), origin, false);
-			}
+			Collections.reverse(segments);
+			segments.add(path);
+			PathAndOrigin joinedPath = path(parent, StringUtils.collectionToDelimitedString(segments, "."));
+			return new PathAndOrigin(joinedPath.path().getLeafProperty(), origin, false);
 		}
-		throw new IllegalStateException(" oh no ");
 
+		throw new IllegalStateException("🙈 Unsupported origin type: " + origin);
 	}
 
 	/**
@@ -578,6 +584,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
@@ -597,6 +604,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
@@ -617,6 +625,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
@@ -651,20 +660,28 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
-	 * {@code WHERE} predicate.
+	 * Interface specifying a predicate or expression that can be rendered to {@code String}.
 	 */
-	public interface Predicate {
+	public interface Renderable {
 
 		/**
-		 * Render the predicate given {@link RenderContext}.
+		 * Render the predicate or expression given {@link RenderContext}.
 		 *
 		 * @param context
 		 * @return
 		 */
 		String render(RenderContext context);
+
+	}
+
+	/**
+	 * {@code WHERE} predicate.
+	 */
+	public interface Predicate extends Renderable {
 
 		/**
 		 * {@code OR}-concatenate this predicate with {@code other}.
@@ -700,21 +717,21 @@ public final class JpqlQueryBuilder {
 		default Predicate nest() {
 			return new NestedPredicate(this);
 		}
+
 	}
 
 	/**
 	 * Interface specifying an expression that can be rendered to {@code String}.
 	 */
-	public interface Expression {
+	public interface Expression extends Renderable {
 
 		/**
-		 * Render the expression given {@link RenderContext}.
+		 * Create an {@link AliasedExpression} with the given {@code alias}. If the expression is already aliased, the
+		 * previous alias is discarded and replaced with the new one.
 		 *
-		 * @param context
+		 * @param alias
 		 * @return
 		 */
-		String render(RenderContext context);
-
 		default AliasedExpression as(String alias) {
 
 			if (this instanceof DefaultAliasedExpression de) {
@@ -723,6 +740,7 @@ public final class JpqlQueryBuilder {
 
 			return new DefaultAliasedExpression(this, alias);
 		}
+
 	}
 
 	/**
@@ -755,6 +773,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
@@ -767,6 +786,7 @@ public final class JpqlQueryBuilder {
 		 * @return the associated {@link PropertyPath}.
 		 */
 		PropertyPath getPropertyPath();
+
 	}
 
 	/**
@@ -864,6 +884,7 @@ public final class JpqlQueryBuilder {
 
 			return result.toString();
 		}
+
 	}
 
 	/**
@@ -888,6 +909,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render();
 		}
+
 	}
 
 	record OrderExpression(Expression sortExpression, @org.springframework.lang.Nullable Sort.Direction direction,
@@ -914,6 +936,7 @@ public final class JpqlQueryBuilder {
 
 			return builder.toString();
 		}
+
 	}
 
 	/**
@@ -965,6 +988,7 @@ public final class JpqlQueryBuilder {
 		public boolean isConstructorContext() {
 			return false;
 		}
+
 	}
 
 	static class ConstructorContext extends RenderContext {
@@ -977,6 +1001,7 @@ public final class JpqlQueryBuilder {
 		public boolean isConstructorContext() {
 			return true;
 		}
+
 	}
 
 	/**
@@ -991,15 +1016,7 @@ public final class JpqlQueryBuilder {
 		 * @return the simple name of the origin (e.g. {@link Class#getSimpleName()})
 		 */
 		String getName();
-	}
 
-	/**
-	 * An origin that is used to select data from. selection origins are used with paths to define where a path is
-	 * anchored.
-	 */
-	public interface Bindable {
-
-		boolean isRoot();
 	}
 
 	/**
@@ -1282,6 +1299,7 @@ public final class JpqlQueryBuilder {
 		 * @return
 		 */
 		Predicate neq(Expression value);
+
 	}
 
 	record LiteralExpression(String expression) implements Expression {
@@ -1295,6 +1313,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record StringLiteralExpression(String literal) implements Expression {
@@ -1312,6 +1331,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record ParameterExpression(ParameterPlaceholder parameter) implements Expression {
@@ -1325,6 +1345,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record FunctionExpression(String function, List<Expression> arguments) implements Expression {
@@ -1350,6 +1371,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record OperatorPredicate(Expression path, String operator, Expression predicate) implements Predicate {
@@ -1363,6 +1385,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record MemberOfPredicate(Expression path, String operator, Expression predicate) implements Predicate {
@@ -1376,6 +1399,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record LhsPredicate(Expression path, String predicate) implements Predicate {
@@ -1389,6 +1413,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record BetweenPredicate(Expression path, Expression lower, Expression upper) implements Predicate {
@@ -1402,6 +1427,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record LikePredicate(Expression left, String operator, Expression right, String escape) implements Predicate {
@@ -1415,6 +1441,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record InPredicate(Expression path, String operator, Expression predicate) implements Predicate {
@@ -1422,14 +1449,21 @@ public final class JpqlQueryBuilder {
 		@Override
 		public String render(RenderContext context) {
 
-			// TODO: should we rather wrap it with nested or check if its a nested predicate before we call render
-			return "%s %s (%s)".formatted(path.render(context), operator, predicate.render(context));
+			Expression predicate = this.predicate;
+			String rendered = predicate.render(context);
+
+			return (hasParenthesis(rendered) ? "%s %s %s" : "%s %s (%s)").formatted(path.render(context), operator, rendered);
 		}
 
 		@Override
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
+		private static boolean hasParenthesis(String str) {
+			return str.startsWith("(") && str.endsWith(")");
+		}
+
 	}
 
 	record AndPredicate(Predicate left, Predicate right) implements Predicate {
@@ -1443,6 +1477,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record OrPredicate(Predicate left, Predicate right) implements Predicate {
@@ -1456,6 +1491,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	record NestedPredicate(Predicate delegate) implements Predicate {
@@ -1469,6 +1505,7 @@ public final class JpqlQueryBuilder {
 		public String toString() {
 			return render(RenderContext.EMPTY);
 		}
+
 	}
 
 	/**
@@ -1500,6 +1537,7 @@ public final class JpqlQueryBuilder {
 		public String getAlias() {
 			return path().getSegment();
 		}
+
 	}
 
 	/**
@@ -1534,5 +1572,7 @@ public final class JpqlQueryBuilder {
 			Assert.hasText(name, "Placeholder name must not be empty");
 			return new ParameterPlaceholder(":%s".formatted(name));
 		}
+
 	}
+
 }

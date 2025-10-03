@@ -41,7 +41,6 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -58,6 +57,7 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.AbstractRepositoryMetadata;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.query.QueryCreationException;
 import org.springframework.data.repository.query.RepositoryQuery;
 import org.springframework.data.repository.query.ResultProcessor;
 import org.springframework.data.repository.query.ValueExpressionDelegate;
@@ -193,16 +193,16 @@ class SimpleJpaQueryUnitTests {
 		createJpaQuery(method);
 	}
 
-	@Test // DATAJPA-352
-	@SuppressWarnings("unchecked")
+	@Test // DATAJPA-352, GH-2736
 	void validatesAndRejectsCountQueryIfPagingMethod() throws Exception {
 
 		Method method = SampleRepository.class.getMethod("pageByAnnotatedQuery", Pageable.class);
 
 		when(em.createQuery(Mockito.contains("count"))).thenThrow(IllegalArgumentException.class);
 
-		assertThatIllegalArgumentException().isThrownBy(() -> createJpaQuery(method)).withMessageContaining("Count")
-				.withMessageContaining(method.getName());
+		assertThatExceptionOfType(QueryCreationException.class) //
+				.isThrownBy(() -> createJpaQuery(method)) //
+				.withMessageContaining("User u");
 	}
 
 	@Test
@@ -323,7 +323,7 @@ class SimpleJpaQueryUnitTests {
 
 		Method illegalMethod = SampleRepository.class.getMethod("illegalUseOfJdbcStyleParameters", String.class);
 
-		assertThatIllegalArgumentException().isThrownBy(() -> createJpaQuery(illegalMethod));
+		assertThatExceptionOfType(QueryCreationException.class).isThrownBy(() -> createJpaQuery(illegalMethod));
 	}
 
 	@Test // GH-3929

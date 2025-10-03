@@ -47,7 +47,6 @@ import org.springframework.data.repository.query.ReturnedType;
  * @see HqlQueryParser
  * @see EqlQueryParser
  */
-@SuppressWarnings("removal")
 class JpaQueryEnhancer<Q extends QueryInformation> implements QueryEnhancer {
 
 	private final ParserRuleContext context;
@@ -216,7 +215,8 @@ class JpaQueryEnhancer<Q extends QueryInformation> implements QueryEnhancer {
 	 */
 	@Override
 	public DeclaredQuery getQuery() {
-		throw new UnsupportedOperationException();
+		QueryTokenStream tokens = sortFunction.apply(Sort.unsorted(), this.queryInformation, null).visit(context);
+		return DeclaredQuery.jpqlQuery(QueryRenderer.TokenRenderer.render(tokens));
 	}
 
 	@Override

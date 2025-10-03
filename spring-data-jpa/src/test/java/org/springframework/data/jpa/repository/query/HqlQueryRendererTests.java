@@ -2080,6 +2080,12 @@ class HqlQueryRendererTests {
 		assertQuery("select ln(7.5) from Element a");
 	}
 
+	@Test // GH-4013
+	void minMaxFunctionsShouldWork() {
+		assertQuery("SELECT MAX(MIN(MOD(e.salary, 10))), e.address.city FROM Employee e");
+		assertQuery("SELECT MIN(MOD(e.salary, 10)), e.address.city FROM Employee e");
+	}
+
 	@Test // GH-2981
 	void cteWithClauseShouldWork() {
 
@@ -2089,6 +2095,31 @@ class HqlQueryRendererTests {
 					group by sr.userId)
 				select sr from maxId m join SnapshotReference sr on sr.snapshot.id = m.snapshotId
 				""");
+	}
+
+	@Test // GH-4012
+	void cteWithSearch() {
+
+		assertQuery("""
+				WITH Tree AS (SELECT o.uuid AS test_uuid FROM DemoEntity o)
+				SEARCH BREADTH FIRST BY foo ASC NULLS FIRST, bar DESC NULLS LAST SET baz
+					SELECT test_uuid FROM Tree
+				""");
+	}
+
+	@Test // GH-4012
+	void cteWithCycle() {
+
+		assertQuery("""
+				WITH Tree AS (SELECT o.uuid AS test_uuid FROM DemoEntity o) CYCLE test_uuid SET circular TO true DEFAULT false
+					SELECT test_uuid FROM Tree
+				""");
+
+		assertQuery(
+				"""
+						WITH Tree AS (SELECT o.uuid AS test_uuid FROM DemoEntity o) CYCLE test_uuid SET circular TO true DEFAULT false USING bar
+							SELECT test_uuid FROM Tree
+						""");
 	}
 
 	@Test // GH-2982

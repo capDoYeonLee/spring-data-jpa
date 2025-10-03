@@ -36,9 +36,10 @@ import org.springframework.util.Assert;
  * <p>
  * Specifications can be composed into higher order functions from other specifications using
  * {@link #and(Specification)}, {@link #or(Specification)} or factory methods such as {@link #allOf(Iterable)}.
+ * <p>
  * Composition considers whether one or more specifications contribute to the overall predicate by returning a
- * {@link Predicate} or {@literal null}. Specifications returning {@literal null} are considered to not contribute to
- * the overall predicate and their result is not considered in the final predicate.
+ * {@link Predicate} or {@literal null}. Specifications returning {@literal null}, such as {@link #unrestricted()}, are
+ * considered to not contribute to the overall predicate, and their result is not considered in the final predicate.
  *
  * @author Oliver Gierke
  * @author Thomas Darimont
@@ -48,12 +49,21 @@ import org.springframework.util.Assert;
  * @author Jens Schauder
  * @author Daniel Shuy
  * @author Sergey Rukin
+ * @author Heeeun Cho
+ * @author Peter Aisher
  */
 @FunctionalInterface
 public interface Specification<T> extends Serializable {
 
 	/**
-	 * Simple static factory method to create a specification matching all objects.
+	 * Simple static factory method to create a specification which does not participate in matching. The specification
+	 * returned is {@code null}-like, and is elided in all operations.
+	 *
+	 * <pre class="code">
+	 * unrestricted().and(other) // consider only `other`
+	 * unrestricted().or(other) // consider only `other`
+	 * not(unrestricted()) // equivalent to `unrestricted()`
+	 * </pre>
 	 *
 	 * @param <T> the type of the {@link Root} the resulting {@literal Specification} operates on.
 	 * @return guaranteed to be not {@literal null}.
@@ -61,6 +71,23 @@ public interface Specification<T> extends Serializable {
 	 */
 	static <T> Specification<T> unrestricted() {
 		return (root, query, builder) -> null;
+	}
+
+	/**
+	 * Simple static factory method to add some syntactic sugar around a {@link Specification}.
+	 *
+	 * @implNote does not accept {@literal null} values since 4.0, use {@link #unrestricted()} instead of passing
+	 *           {@literal null} values.
+	 * @param <T> the type of the {@link Root} the resulting {@literal Specification} operates on.
+	 * @param spec can be {@literal null}.
+	 * @return guaranteed to be not {@literal null}.
+	 * @since 2.0
+	 */
+	static <T> Specification<T> where(Specification<T> spec) {
+
+		Assert.notNull(spec, "Specification must not be null");
+
+		return spec;
 	}
 
 	/**
@@ -157,13 +184,13 @@ public interface Specification<T> extends Serializable {
 		return (root, query, builder) -> {
 
 			Predicate predicate = spec.toPredicate(root, query, builder);
-			return predicate != null ? builder.not(predicate) : builder.disjunction();
+			return predicate != null ? builder.not(predicate) : null;
 		};
 	}
 
 	/**
 	 * Applies an AND operation to all the given {@link Specification}s. If {@code specifications} is empty, the resulting
-	 * {@link Specification} will be unrestricted applying to all objects.
+	 * {@link Specification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link Specification}s to compose.
 	 * @return the conjunction of the specifications.
@@ -178,7 +205,7 @@ public interface Specification<T> extends Serializable {
 
 	/**
 	 * Applies an AND operation to all the given {@link Specification}s. If {@code specifications} is empty, the resulting
-	 * {@link Specification} will be unrestricted applying to all objects.
+	 * {@link Specification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link Specification}s to compose.
 	 * @return the conjunction of the specifications.
@@ -194,7 +221,7 @@ public interface Specification<T> extends Serializable {
 
 	/**
 	 * Applies an OR operation to all the given {@link Specification}s. If {@code specifications} is empty, the resulting
-	 * {@link Specification} will be unrestricted applying to all objects.
+	 * {@link Specification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link Specification}s to compose.
 	 * @return the disjunction of the specifications
@@ -209,7 +236,7 @@ public interface Specification<T> extends Serializable {
 
 	/**
 	 * Applies an OR operation to all the given {@link Specification}s. If {@code specifications} is empty, the resulting
-	 * {@link Specification} will be unrestricted applying to all objects.
+	 * {@link Specification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link Specification}s to compose.
 	 * @return the disjunction of the specifications

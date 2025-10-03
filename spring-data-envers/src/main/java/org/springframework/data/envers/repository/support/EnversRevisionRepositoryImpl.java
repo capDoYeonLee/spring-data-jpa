@@ -66,12 +66,14 @@ import org.springframework.util.Assert;
  * @author Greg Turnquist
  * @author Aref Behboodi
  * @author Ngoc Nhan
+ * @author Chaedong Im
  */
 @Transactional(readOnly = true)
 public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N>>
 		implements RevisionRepository<T, ID, N> {
 
 	private final EntityInformation<T, ?> entityInformation;
+	private final RevisionEntityInformation revisionEntityInformation;
 	private final EntityManager entityManager;
 
 	/**
@@ -90,14 +92,17 @@ public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N
 		Assert.notNull(revisionEntityInformation, "RevisionEntityInformation must not be null!");
 
 		this.entityInformation = entityInformation;
+		this.revisionEntityInformation = revisionEntityInformation;
 		this.entityManager = entityManager;
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
 	public Optional<Revision<N, T>> findLastChangeRevision(ID id) {
 
+		String timestampFieldName = getRevisionTimestampFieldName();
 		List<Object[]> singleResult = createBaseQuery(id) //
-				.addOrder(AuditEntity.revisionProperty("timestamp").desc()) //
+				.addOrder(AuditEntity.revisionProperty(timestampFieldName).desc()) //
 				.addOrder(AuditEntity.revisionNumber().desc()) //
 				.setMaxResults(1) //
 				.getResultList();
@@ -131,6 +136,7 @@ public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N
 		return Optional.of(createRevision(new QueryResult<>(singleResult.get(0))));
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
 	public Revisions<N, T> findRevisions(ID id) {
 
@@ -171,6 +177,7 @@ public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N
 		return result;
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
 	public Page<Revision<N, T>> findRevisions(ID id, Pageable pageable) {
 
@@ -182,9 +189,12 @@ public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N
 
 		orderMapped.forEach(baseQuery::addOrder);
 
+		if (pageable.isPaged()) {
+			baseQuery.setFirstResult((int) pageable.getOffset()) //
+					.setMaxResults(pageable.getPageSize());
+		}
+
 		List<Object[]> resultList = baseQuery //
-				.setFirstResult((int) pageable.getOffset()) //
-				.setMaxResults(pageable.getPageSize()) //
 				.getResultList();
 
 		Long count = (Long) createBaseQuery(id) //
@@ -211,6 +221,14 @@ public class EnversRevisionRepositoryImpl<T, ID, N extends Number & Comparable<N
 	@SuppressWarnings("unchecked")
 	private Revision<N, T> createRevision(QueryResult<T> queryResult) {
 		return Revision.of((RevisionMetadata<N>) queryResult.createRevisionMetadata(), queryResult.entity);
+	}
+
+	private String getRevisionTimestampFieldName() {
+		if (revisionEntityInformation instanceof EnversRevisionEntityInformation reflection) {
+			return reflection.getRevisionTimestampPropertyName();
+		} else {
+			return DefaultRevisionEntityInformation.INSTANCE.getRevisionTimestampPropertyName();
+		}
 	}
 
 	@SuppressWarnings("unchecked")

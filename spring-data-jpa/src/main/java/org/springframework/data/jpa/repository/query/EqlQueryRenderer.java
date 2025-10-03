@@ -35,6 +35,7 @@ import org.springframework.util.CollectionUtils;
  * @author Greg Turnquist
  * @author Christoph Strobl
  * @author Mark Paluch
+ * @author TaeHyun Kang
  * @since 3.2
  */
 @SuppressWarnings({ "ConstantConditions", "DuplicatedCode" })
@@ -43,19 +44,24 @@ class EqlQueryRenderer extends EqlBaseVisitor<QueryTokenStream> {
 	/**
 	 * Is this AST tree a {@literal subquery}?
 	 *
-	 * @return boolean
+	 * @return {@literal true} is the query is a subquery; {@literal false} otherwise.
 	 */
 	static boolean isSubquery(ParserRuleContext ctx) {
 
-		if (ctx instanceof EqlParser.SubqueryContext) {
-			return true;
-		} else if (ctx instanceof EqlParser.Update_statementContext) {
-			return false;
-		} else if (ctx instanceof EqlParser.Delete_statementContext) {
-			return false;
-		} else {
-			return ctx.getParent() != null && isSubquery(ctx.getParent());
+		while (ctx != null) {
+
+			if (ctx instanceof EqlParser.SubqueryContext) {
+				return true;
+			}
+
+			if (ctx instanceof EqlParser.Update_statementContext || ctx instanceof EqlParser.Delete_statementContext) {
+				return false;
+			}
+
+			ctx = ctx.getParent();
 		}
+
+		return false;
 	}
 
 	/**
@@ -65,11 +71,16 @@ class EqlQueryRenderer extends EqlBaseVisitor<QueryTokenStream> {
 	 */
 	static boolean isSetQuery(ParserRuleContext ctx) {
 
-		if (ctx instanceof EqlParser.Set_fuctionContext) {
-			return true;
+		while (ctx != null) {
+
+			if (ctx instanceof EqlParser.Set_fuctionContext) {
+				return true;
+			}
+
+			ctx = ctx.getParent();
 		}
 
-		return ctx.getParent() != null && isSetQuery(ctx.getParent());
+		return false;
 	}
 
 	@Override
@@ -494,7 +505,7 @@ class EqlQueryRenderer extends EqlBaseVisitor<QueryTokenStream> {
 				builder.append(QueryTokens.expression(ctx.DISTINCT()));
 			}
 
-			builder.appendInline(visit(ctx.state_valued_path_expression()));
+			builder.appendInline(visit(ctx.simple_select_expression()));
 			builder.append(TOKEN_CLOSE_PAREN);
 		} else if (ctx.COUNT() != null) {
 
@@ -503,13 +514,7 @@ class EqlQueryRenderer extends EqlBaseVisitor<QueryTokenStream> {
 			if (ctx.DISTINCT() != null) {
 				builder.append(QueryTokens.expression(ctx.DISTINCT()));
 			}
-			if (ctx.identification_variable() != null) {
-				builder.appendInline(visit(ctx.identification_variable()));
-			} else if (ctx.state_valued_path_expression() != null) {
-				builder.appendInline(visit(ctx.state_valued_path_expression()));
-			} else if (ctx.single_valued_object_path_expression() != null) {
-				builder.appendInline(visit(ctx.single_valued_object_path_expression()));
-			}
+			builder.appendInline(visit(ctx.simple_select_expression()));
 			builder.append(TOKEN_CLOSE_PAREN);
 		} else if (ctx.function_invocation() != null) {
 			builder.append(visit(ctx.function_invocation()));

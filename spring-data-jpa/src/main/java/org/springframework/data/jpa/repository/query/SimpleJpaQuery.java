@@ -20,6 +20,7 @@ import jakarta.persistence.Query;
 
 import org.jspecify.annotations.Nullable;
 
+import org.springframework.data.repository.query.QueryCreationException;
 import org.springframework.data.repository.query.RepositoryQuery;
 
 /**
@@ -48,11 +49,10 @@ class SimpleJpaQuery extends AbstractStringBasedJpaQuery {
 
 		super(method, em, query, countQuery, queryConfiguration);
 
-		validateQuery(getQuery().getQueryString(), "Validation failed for query for method %s", method);
+		validateQuery(getQuery(), "Query validation failed for '%s'", method);
 
 		if (method.isPageQuery()) {
-			validateQuery(getCountQuery().getQueryString(),
-					String.format("Count query validation failed for method %s", method));
+			validateQuery(getCountQuery(), "Count query validation failed for '%s'", method);
 		}
 	}
 
@@ -62,19 +62,20 @@ class SimpleJpaQuery extends AbstractStringBasedJpaQuery {
 	 * @param query
 	 * @param errorMessage
 	 */
-	private void validateQuery(String query, String errorMessage, Object... arguments) {
+	private void validateQuery(QueryProvider query, String errorMessage, JpaQueryMethod method) {
 
 		if (getQueryMethod().isProcedureQuery()) {
 			return;
 		}
 
-        try (EntityManager validatingEm = getEntityManager().getEntityManagerFactory().createEntityManager()) {
-            validatingEm.createQuery(query);
-        } catch (RuntimeException e) {
+		String queryString = query.getQueryString();
+		try (EntityManager validatingEm = getEntityManager().getEntityManagerFactory().createEntityManager()) {
+			validatingEm.createQuery(queryString);
+		} catch (RuntimeException e) {
 
-            // Needed as there's ambiguities in how an invalid query string shall be expressed by the persistence provider
-            // https://java.net/projects/jpa-spec/lists/jsr338-experts/archive/2012-07/message/17
-            throw new IllegalArgumentException(String.format(errorMessage, arguments), e);
-        }
+			// Needed as there's ambiguities in how an invalid query string shall be expressed by the persistence provider
+			// https://download.oracle.com/javaee-archive/jpa-spec.java.net/users/2012/07/0404.html
+			throw QueryCreationException.create(method, errorMessage.formatted(queryString), e);
+		}
 	}
 }

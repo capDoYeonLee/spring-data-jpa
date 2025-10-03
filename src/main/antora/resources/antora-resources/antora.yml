@@ -3,20 +3,21 @@ prerelease: ${antora-component.prerelease}
 
 asciidoc:
   attributes:
-    version: ${project.version}
-    copyright-year: ${current.year}
-    springversionshort: ${spring.short}
-    springversion: ${spring}
     attribute-missing: 'warn'
-    commons: ${springdata.commons.docs}
+    chomp: 'all'
+    version: '${project.version}'
+    copyright-year: '${current.year}'
+    springversionshort: '${spring.short}'
+    springversion: '${spring}'
+    commons: '${springdata.commons.docs}'
     include-xml-namespaces: false
-    spring-data-commons-docs-url: https://docs.spring.io/spring-data/commons/reference
-    spring-data-commons-javadoc-base: https://docs.spring.io/spring-data/commons/docs/${springdata.commons}/api/
-    springdocsurl: https://docs.spring.io/spring-framework/reference/{springversionshort}
-    springjavadocurl: https://docs.spring.io/spring-framework/docs/${spring}/javadoc-api
+    spring-data-commons-docs-url: '${documentation.baseurl}/spring-data/commons/reference/${springdata.commons.short}'
+    spring-data-commons-javadoc-base: '{spring-data-commons-docs-url}/api/java'
+    springdocsurl: '${documentation.baseurl}/spring-framework/reference/{springversionshort}'
     spring-framework-docs: '{springdocsurl}'
+    springjavadocurl: '${documentation.spring-javadoc-url}'
     spring-framework-javadoc: '{springjavadocurl}'
-    springhateoasversion: ${spring-hateoas}
+    springhateoasversion: '${spring-hateoas}'
     hibernatejavadocurl: https://docs.jboss.org/hibernate/orm/6.6/javadocs/
-    releasetrainversion: ${releasetrain}
+    releasetrainversion: '${releasetrain}'
     store: Jpa

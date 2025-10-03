@@ -32,6 +32,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.support.ConfigurableConversionService;
 import org.springframework.core.convert.support.DefaultConversionService;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Score;
@@ -51,6 +52,7 @@ import org.springframework.data.util.CloseableIterator;
 import org.springframework.data.util.StreamUtils;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.ReflectionUtils;
 
 /**
@@ -350,12 +352,11 @@ public abstract class JpaQueryExecution {
 
 			Class<?> returnType = method.getReturnType();
 
-			boolean isVoid = ClassUtils.isAssignable(returnType, Void.class);
-			boolean isInt = ClassUtils.isAssignable(returnType, Integer.class);
-			boolean isLong = ClassUtils.isAssignable(returnType, Long.class);
+			boolean isVoid = org.springframework.data.util.ReflectionUtils.isVoid(returnType);
+			boolean isNumber = ClassUtils.isAssignable(Number.class, returnType);
 
-			Assert.isTrue(isInt || isLong || isVoid,
-					"Modifying queries can only use void or int/Integer as return type; Offending method: " + method);
+			Assert.isTrue(isNumber || isVoid,
+					"Modifying queries can only use void, int/Integer, or long/Long as return type; Offending method: " + method);
 
 			this.em = em;
 			this.flush = method.getFlushAutomatically();
@@ -373,10 +374,6 @@ public abstract class JpaQueryExecution {
 
 			if (clear) {
 				em.clear();
-			}
-
-			if (ClassUtils.isAssignable(method.getReturnType(), Long.class)) {
-				return (long) result;
 			}
 
 			return result;
@@ -399,16 +396,34 @@ public abstract class JpaQueryExecution {
 		}
 
 		@Override
-		protected Object doExecute(AbstractJpaQuery jpaQuery, JpaParametersParameterAccessor accessor) {
+		protected @Nullable Object doExecute(AbstractJpaQuery jpaQuery, JpaParametersParameterAccessor accessor) {
 
 			Query query = jpaQuery.createQuery(accessor);
 			List<?> resultList = query.getResultList();
+			Class<?> returnType = jpaQuery.getQueryMethod().getReturnType();
+
+			boolean simpleBatch = ClassUtils.isAssignable(Number.class, returnType)
+					|| org.springframework.data.util.ReflectionUtils.isVoid(returnType);
+			boolean collectionQuery = jpaQuery.getQueryMethod().isCollectionQuery();
+
+			if (!simpleBatch && !collectionQuery) {
+
+				if (resultList.size() > 1) {
+					throw new IncorrectResultSizeDataAccessException(
+							"Delete query returned more than one element: expected 1, actual " + resultList.size(), 1,
+							resultList.size());
+				}
+			}
 
 			for (Object o : resultList) {
 				em.remove(o);
 			}
 
-			return jpaQuery.getQueryMethod().isCollectionQuery() ? resultList : resultList.size();
+			if (simpleBatch) {
+				return resultList.size();
+			}
+
+			return collectionQuery ? resultList : CollectionUtils.firstElement(resultList);
 		}
 	}
 

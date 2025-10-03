@@ -42,6 +42,8 @@ import org.mockito.quality.Strictness;
  * @author Jens Schauder
  * @author Mark Paluch
  * @author Daniel Shuy
+ * @author Heeeun Cho
+ * @author Peter Aisher
  */
 @SuppressWarnings({ "unchecked", "deprecation" })
 @ExtendWith(MockitoExtension.class)
@@ -126,15 +128,40 @@ class SpecificationUnitTests {
 		verify(builder).or(firstPredicate, secondPredicate);
 	}
 
-	@Test // GH-3849
+	@Test // GH-3849, GH-4023
 	void notWithNullPredicate() {
 
-		when(builder.disjunction()).thenReturn(mock(Predicate.class));
+		Specification<Object> notSpec = Specification.not(Specification.unrestricted());
 
-		Specification<Object> notSpec = Specification.not((r, q, cb) -> null);
+		assertThat(notSpec.toPredicate(root, query, builder)).isNull();
+		verifyNoInteractions(builder);
+	}
 
-		assertThat(notSpec.toPredicate(root, query, builder)).isNotNull();
-		verify(builder).disjunction();
+	@Test // GH-3992
+	void whereWithSpecificationReturnsSameSpecification() {
+
+		Specification<Object> originalSpec = (r, q, cb) -> predicate;
+		Specification<Object> wrappedSpec = Specification.where(originalSpec);
+
+		assertThat(wrappedSpec).isSameAs(originalSpec);
+	}
+
+	@Test // GH-3992
+	void whereWithSpecificationSupportsFluentComposition() {
+
+		Specification<Object> firstSpec = (r, q, cb) -> predicate;
+		Specification<Object> secondSpec = (r, q, cb) -> predicate;
+
+		Specification<Object> composedSpec = Specification.where(firstSpec).and(secondSpec);
+
+		assertThat(composedSpec).isNotNull();
+		composedSpec.toPredicate(root, query, builder);
+		verify(builder).and(predicate, predicate);
+	}
+
+	@Test // GH-3992
+	void whereWithNullSpecificationThrowsException() {
+		assertThatIllegalArgumentException().isThrownBy(() -> Specification.where((Specification<Object>) null));
 	}
 
 	static class SerializableSpecification implements Serializable, Specification<Object> {

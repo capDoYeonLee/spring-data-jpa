@@ -20,22 +20,23 @@ import jakarta.persistence.Query;
 import jakarta.persistence.QueryHint;
 import jakarta.persistence.Tuple;
 
-import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.LongSupplier;
 
 import org.jspecify.annotations.Nullable;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.core.annotation.MergedAnnotation;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Score;
 import org.springframework.data.domain.SliceImpl;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Vector;
+import org.springframework.data.javapoet.LordOfTheStrings;
+import org.springframework.data.javapoet.TypeNames;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.QueryHints;
@@ -45,7 +46,7 @@ import org.springframework.data.jpa.repository.query.JpaQueryMethod;
 import org.springframework.data.jpa.repository.query.ParameterBinding;
 import org.springframework.data.jpa.repository.support.JpqlQueryTemplates;
 import org.springframework.data.repository.aot.generate.AotQueryMethodGenerationContext;
-import org.springframework.data.repository.query.ReturnedType;
+import org.springframework.data.repository.aot.generate.MethodReturn;
 import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.javapoet.CodeBlock;
 import org.springframework.javapoet.CodeBlock.Builder;
@@ -87,7 +88,7 @@ class JpaCodeBlocks {
 		private final AotQueryMethodGenerationContext context;
 		private final JpaQueryMethod queryMethod;
 		private final String parameterNames;
-		private String queryVariableName;
+		private final String queryVariableName;
 		private @Nullable AotQueries queries;
 		private MergedAnnotation<QueryHints> queryHints = MergedAnnotation.missing();
 		private @Nullable AotEntityGraph entityGraph;
@@ -96,6 +97,7 @@ class JpaCodeBlocks {
 		private @Nullable Class<?> queryRewriter = QueryRewriter.IdentityQueryRewriter.class;
 
 		private QueryBlockBuilder(AotQueryMethodGenerationContext context, JpaQueryMethod queryMethod) {
+
 			this.context = context;
 			this.queryMethod = queryMethod;
 			this.queryVariableName = context.localVariable("query");
@@ -107,12 +109,6 @@ class JpaCodeBlocks {
 			} else {
 				this.parameterNames = "";
 			}
-		}
-
-		public QueryBlockBuilder usingQueryVariableName(String queryVariableName) {
-
-			this.queryVariableName = context.localVariable(queryVariableName);
-			return this;
 		}
 
 		public QueryBlockBuilder filter(AotQueries query) {
@@ -158,9 +154,8 @@ class JpaCodeBlocks {
 
 			Assert.notNull(queries, "Queries must not be null");
 
-			boolean isProjecting = context.getReturnedType().isProjecting();
-			Class<?> actualReturnType = isProjecting ? context.getActualReturnType().toClass()
-					: context.getRepositoryInformation().getDomainType();
+			MethodReturn methodReturn = context.getMethodReturn();
+			boolean isProjecting = methodReturn.isProjecting();
 
 			String dynamicReturnType = null;
 			if (queryMethod.getParameters().hasDynamicProjection()) {
@@ -211,11 +206,7 @@ class JpaCodeBlocks {
 			if ((StringUtils.hasText(sortParameterName) || StringUtils.hasText(dynamicReturnType))
 					&& queries != null && queries.result() instanceof StringAotQuery
 					&& StringUtils.hasText(queryStringVariableName)) {
-				builder.add(applyRewrite(sortParameterName, dynamicReturnType, queryStringVariableName, actualReturnType));
-			}
-
-			if (queries.result().hasExpression() || queries.count().hasExpression()) {
-				builder.addStatement("class ExpressionMarker{}");
+				builder.add(applyRewrite(sortParameterName, dynamicReturnType, isProjecting, queryStringVariableName));
 			}
 
 			builder.add(createQuery(false, queryVariableName, queryStringVariableName, queryRewriterName, queries.result(),
@@ -249,8 +240,8 @@ class JpaCodeBlocks {
 			return builder.build();
 		}
 
-		private CodeBlock applyRewrite(@Nullable String sort, @Nullable String dynamicReturnType, String queryString,
-				Class<?> actualReturnType) {
+		private CodeBlock applyRewrite(@Nullable String sort, @Nullable String dynamicReturnType, boolean isProjecting,
+				String queryString) {
 
 			Builder builder = CodeBlock.builder();
 
@@ -269,6 +260,10 @@ class JpaCodeBlocks {
 				builder.addStatement("$L = rewriteQuery($L, $L, $L)", queryString, context.localVariable("declaredQuery"), sort,
 						dynamicReturnType);
 			} else if (hasSort) {
+
+				Object actualReturnType = isProjecting ? context.getMethodReturn().getActualClassName()
+						: context.getDomainType();
+
 				builder.addStatement("$L = rewriteQuery($L, $L, $T.class)", queryString, context.localVariable("declaredQuery"),
 						sort, actualReturnType);
 			} else if (hasDynamicReturnType) {
@@ -284,13 +279,18 @@ class JpaCodeBlocks {
 			return builder.build();
 		}
 
-		private CodeBlock applyLimits(boolean exists, String pageable) {
+		private CodeBlock applyLimits(boolean exists, @Nullable String pageable) {
+
+			Assert.notNull(queries, "Queries must not be null");
 
 			Builder builder = CodeBlock.builder();
 
 			if (exists) {
 				builder.addStatement("$L.setMaxResults(1)", queryVariableName);
+				return builder.build();
+			}
 
+			if (queries != null && queries.result() instanceof StringAotQuery sq && sq.hasPagingExpression()) {
 				return builder.build();
 			}
 
@@ -300,8 +300,6 @@ class JpaCodeBlocks {
 				builder.beginControlFlow("if ($L.isLimited())", limit);
 				builder.addStatement("$L.setMaxResults($L.max())", queryVariableName, limit);
 				builder.endControlFlow();
-			} else if (queries != null && queries.result().isLimited()) {
-				builder.addStatement("$L.setMaxResults($L)", queryVariableName, queries.result().getLimit().max());
 			}
 
 			if (StringUtils.hasText(pageable)) {
@@ -314,6 +312,20 @@ class JpaCodeBlocks {
 					builder.addStatement("$L.setMaxResults($L.getPageSize())", queryVariableName, pageable);
 				}
 				builder.endControlFlow();
+			}
+
+			if (queries.result().isLimited()) {
+
+				int max = queries.result().getLimit().max();
+
+				builder.beginControlFlow("if ($L.getMaxResults() != $T.MAX_VALUE)", queryVariableName, Integer.class);
+				builder.beginControlFlow("if ($1L.getMaxResults() > $2L && $1L.getFirstResult() > 0)", queryVariableName, max);
+				builder.addStatement("$1L.setFirstResult($1L.getFirstResult() - ($1L.getMaxResults() - $2L))",
+						queryVariableName, max);
+				builder.endControlFlow();
+				builder.endControlFlow();
+
+				builder.addStatement("$1L.setMaxResults($2L)", queryVariableName, max);
 			}
 
 			return builder.build();
@@ -417,7 +429,7 @@ class JpaCodeBlocks {
 				@Nullable String pageable,
 				@Nullable Class<?> queryReturnType) {
 
-			ReturnedType returnedType = context.getReturnedType();
+			MethodReturn methodReturn = context.getMethodReturn();
 			Builder builder = CodeBlock.builder();
 			String queryStringNameToUse = queryStringName;
 
@@ -461,16 +473,14 @@ class JpaCodeBlocks {
 					return builder.build();
 				}
 
-				if (sq.hasConstructorExpressionOrDefaultProjection() && !count && returnedType.isProjecting()
-						&& returnedType.getReturnedType().isInterface()) {
+				if (sq.hasConstructorExpressionOrDefaultProjection() && !count && methodReturn.isInterfaceProjection()) {
 					builder.addStatement("$T $L = this.$L.createQuery($L)", Query.class, queryVariableName,
 							context.fieldNameOf(EntityManager.class), queryStringNameToUse);
 				} else {
 
 					String createQueryMethod = query.isNative() ? "createNativeQuery" : "createQuery";
 
-					if (!sq.hasConstructorExpressionOrDefaultProjection() && !count && returnedType.isProjecting()
-							&& returnedType.getReturnedType().isInterface()) {
+					if (!sq.hasConstructorExpressionOrDefaultProjection() && !count && methodReturn.isInterfaceProjection()) {
 						builder.addStatement("$T $L = this.$L.$L($L, $T.class)", Query.class, queryVariableName,
 								context.fieldNameOf(EntityManager.class), createQueryMethod, queryStringNameToUse, Tuple.class);
 					} else {
@@ -484,11 +494,11 @@ class JpaCodeBlocks {
 
 			if (query instanceof NamedAotQuery nq) {
 
-				if (!count && returnedType.isProjecting() && returnedType.getReturnedType().isInterface()) {
-					builder.addStatement("$T $L = this.$L.createNamedQuery($S)", Query.class, queryVariableName,
-							context.fieldNameOf(EntityManager.class), nq.getName());
-					return builder.build();
-				} else if (queryReturnType != null) {
+				if (!count && !nq.hasConstructorExpressionOrDefaultProjection() && methodReturn.isInterfaceProjection()) {
+					queryReturnType = Tuple.class;
+				}
+
+				if (queryReturnType != null) {
 
 					builder.addStatement("$T $L = this.$L.createNamedQuery($S, $T.class)", Query.class, queryVariableName,
 							context.fieldNameOf(EntityManager.class), nq.getName(), queryReturnType);
@@ -532,13 +542,13 @@ class JpaCodeBlocks {
 					expressionString = "#{" + expressionString + "}";
 				}
 
-				builder.add("evaluateExpression(ExpressionMarker.class.getEnclosingMethod(), $S$L)", expressionString,
+				builder.add("evaluateExpression($L, $S$L)", context.getExpressionMarker().enclosingMethod(), expressionString,
 						parameterNames);
 
 				return builder.build();
 			}
 
-			throw new UnsupportedOperationException("Not supported yet");
+			throw new UnsupportedOperationException("Not supported yet for: " + origin);
 		}
 
 		private CodeBlock applyEntityGraph(AotEntityGraph entityGraph, String queryVariableName) {
@@ -553,9 +563,9 @@ class JpaCodeBlocks {
 			} else {
 
 				builder.addStatement("$T<$T> $L = $L.createEntityGraph($T.class)",
-						jakarta.persistence.EntityGraph.class, context.getActualReturnType().getType(),
+						jakarta.persistence.EntityGraph.class, context.getDomainType(),
 						context.localVariable("entityGraph"),
-						context.fieldNameOf(EntityManager.class), context.getActualReturnType().getType());
+						context.fieldNameOf(EntityManager.class), context.getDomainType());
 
 				for (String attributePath : entityGraph.attributePaths()) {
 
@@ -600,8 +610,8 @@ class JpaCodeBlocks {
 
 		private final AotQueryMethodGenerationContext context;
 		private final JpaQueryMethod queryMethod;
+		private final String queryVariableName;
 		private @Nullable AotQuery aotQuery;
-		private String queryVariableName;
 		private @Nullable String pageable;
 		private MergedAnnotation<Modifying> modifying = MergedAnnotation.missing();
 
@@ -611,12 +621,6 @@ class JpaCodeBlocks {
 			this.queryMethod = queryMethod;
 			this.queryVariableName = context.localVariable("query");
 			this.pageable = context.getPageableParameterName() != null ? context.localVariable("pageable") : null;
-		}
-
-		public QueryExecutionBlockBuilder referencing(String queryVariableName) {
-
-			this.queryVariableName = context.localVariable(queryVariableName);
-			return this;
 		}
 
 		public QueryExecutionBlockBuilder query(AotQuery aotQuery) {
@@ -640,12 +644,12 @@ class JpaCodeBlocks {
 		public CodeBlock build() {
 
 			Builder builder = CodeBlock.builder();
-
-			boolean isProjecting = context.getActualReturnType() != null
-					&& !ObjectUtils.nullSafeEquals(TypeName.get(context.getRepositoryInformation().getDomainType()),
-							context.getActualReturnType());
-			Type actualReturnType = isProjecting ? context.getActualReturnType().getType()
-					: context.getRepositoryInformation().getDomainType();
+			MethodReturn methodReturn = context.getMethodReturn();
+			boolean isProjecting = methodReturn.isProjecting()
+					|| !ObjectUtils.nullSafeEquals(context.getDomainType(), methodReturn.getActualReturnClass())
+					|| StringUtils.hasText(context.getDynamicProjectionParameterName());
+			TypeName typeToRead = isProjecting ? methodReturn.getActualTypeName()
+					: TypeName.get(context.getDomainType());
 			builder.add("\n");
 
 			if (modifying.isPresent()) {
@@ -654,7 +658,7 @@ class JpaCodeBlocks {
 					builder.addStatement("this.$L.flush()", context.fieldNameOf(EntityManager.class));
 				}
 
-				Class<?> returnType = context.getMethod().getReturnType();
+				Class<?> returnType = methodReturn.toClass();
 
 				if (returnsModifying(returnType)) {
 					builder.addStatement("int $L = $L.executeUpdate()", context.localVariable("result"), queryVariableName);
@@ -677,47 +681,78 @@ class JpaCodeBlocks {
 				return builder.build();
 			}
 
-			TypeName queryResultType = TypeName.get(context.getActualReturnType().toClass());
-
 			if (aotQuery != null && aotQuery.isDelete()) {
 
 				builder.addStatement("$T $L = $L.getResultList()", List.class,
 						context.localVariable("resultList"), queryVariableName);
+
+				boolean returnCount = ClassUtils.isAssignable(Number.class, methodReturn.toClass());
+				boolean simpleBatch = returnCount || methodReturn.isVoid();
+				boolean collectionQuery = queryMethod.isCollectionQuery();
+
+				if (!simpleBatch && !collectionQuery) {
+
+					builder.beginControlFlow("if ($L.size() > 1)", context.localVariable("resultList"));
+					builder.addStatement("throw new $1T($2S + $3L.size(), 1, $3L.size())",
+							IncorrectResultSizeDataAccessException.class,
+							"Delete query returned more than one element: expected 1, actual ", context.localVariable("resultList"));
+					builder.endControlFlow();
+				}
+
 				builder.addStatement("$L.forEach($L::remove)", context.localVariable("resultList"),
 						context.fieldNameOf(EntityManager.class));
-				if (!Collection.class.isAssignableFrom(context.getReturnType().toClass())) {
-					if (ClassUtils.isAssignable(Number.class, context.getMethod().getReturnType())) {
-						builder.addStatement("return $T.valueOf($L.size())", context.getMethod().getReturnType(),
+
+				if (collectionQuery) {
+					builder.addStatement("return ($T) $L", List.class, context.localVariable("resultList"));
+
+				} else if (returnCount) {
+					builder.addStatement("return $T.valueOf($L.size())",
+							ClassUtils.resolvePrimitiveIfNecessary(methodReturn.getActualReturnClass()),
 								context.localVariable("resultList"));
 					} else {
-						builder.addStatement("return ($T) ($L.isEmpty() ? null : $L.iterator().next())", actualReturnType,
-								context.localVariable("resultList"), context.localVariable("resultList"));
+
+						builder.addStatement(LordOfTheStrings.returning(methodReturn.toClass())
+								.optional("($1T) ($2L.isEmpty() ? null : $2L.iterator().next())", typeToRead,
+										context.localVariable("resultList")) //
+								.build());
 					}
-				} else {
-					builder.addStatement("return ($T) $L", List.class, context.localVariable("resultList"));
-				}
 			} else if (aotQuery != null && aotQuery.isExists()) {
 				builder.addStatement("return !$L.getResultList().isEmpty()", queryVariableName);
 			} else if (aotQuery != null) {
 
-				if (context.getReturnedType().isProjecting()) {
+				if (isProjecting) {
+
+					TypeName returnType = TypeNames.typeNameOrWrapper(methodReturn.getActualType());
+					CodeBlock convertTo;
+					if (StringUtils.hasText(context.getDynamicProjectionParameterName())) {
+						convertTo = CodeBlock.of("$L", context.getDynamicProjectionParameterName());
+					} else {
+
+						if (methodReturn.isArray() && methodReturn.getActualType().toClass().equals(byte.class)) {
+							returnType = TypeName.get(byte[].class);
+							convertTo = CodeBlock.of("$T.class", returnType);
+						} else {
+							convertTo = CodeBlock.of("$T.class", TypeNames.classNameOrWrapper(methodReturn.getActualType()));
+						}
+					}
 
 					if (queryMethod.isCollectionQuery()) {
-						builder.addStatement("return ($T) convertMany($L.getResultList(), $L, $T.class)",
-								context.getReturnTypeName(), queryVariableName, aotQuery.isNative(), queryResultType);
+						builder.addStatement("return ($T) convertMany($L.getResultList(), $L, $L)", methodReturn.getTypeName(),
+								queryVariableName, aotQuery.isNative(), convertTo);
 					} else if (queryMethod.isStreamQuery()) {
-						builder.addStatement("return ($T) convertMany($L.getResultStream(), $L, $T.class)",
-								context.getReturnTypeName(), queryVariableName, aotQuery.isNative(), queryResultType);
+						builder.addStatement("return ($T) convertMany($L.getResultStream(), $L, $L)", methodReturn.getTypeName(),
+								queryVariableName, aotQuery.isNative(), convertTo);
 					} else if (queryMethod.isPageQuery()) {
 						builder.addStatement(
-								"return $T.getPage(($T<$T>) convertMany($L.getResultList(), $L, $T.class), $L, $L)",
-								PageableExecutionUtils.class, List.class, actualReturnType, queryVariableName, aotQuery.isNative(),
-								queryResultType, pageable, context.localVariable("countAll"));
+								"return $T.getPage(($T<$T>) convertMany($L.getResultList(), $L, $L), $L, $L)",
+								PageableExecutionUtils.class, List.class, TypeNames.typeNameOrWrapper(methodReturn.getActualType()),
+								queryVariableName, aotQuery.isNative(), convertTo, pageable, context.localVariable("countAll"));
 					} else if (queryMethod.isSliceQuery()) {
-						builder.addStatement("$T<$T> $L = ($T<$T>) convertMany($L.getResultList(), $L, $T.class)", List.class,
-								actualReturnType, context.localVariable("resultList"), List.class, actualReturnType, queryVariableName,
+						builder.addStatement("$T<$T> $L = ($T<$T>) convertMany($L.getResultList(), $L, $L)", List.class,
+								TypeNames.typeNameOrWrapper(methodReturn.getActualType()), context.localVariable("resultList"),
+								List.class, typeToRead, queryVariableName,
 								aotQuery.isNative(),
-								queryResultType);
+								convertTo);
 						builder.addStatement("boolean $L = $L.isPaged() && $L.size() > $L.getPageSize()",
 								context.localVariable("hasNext"), pageable, context.localVariable("resultList"), pageable);
 						builder.addStatement(
@@ -726,27 +761,24 @@ class JpaCodeBlocks {
 								pageable, context.localVariable("resultList"), pageable, context.localVariable("hasNext"));
 					} else {
 
-						if (Optional.class.isAssignableFrom(context.getReturnType().toClass())) {
-							builder.addStatement("return $T.ofNullable(($T) convertOne($L.getSingleResultOrNull(), $L, $T.class))",
-									Optional.class, actualReturnType, queryVariableName, aotQuery.isNative(), queryResultType);
-						} else {
-							builder.addStatement("return ($T) convertOne($L.getSingleResultOrNull(), $L, $T.class)",
-									context.getReturnTypeName(), queryVariableName, aotQuery.isNative(), queryResultType);
-						}
+						builder.addStatement(LordOfTheStrings.returning(methodReturn.toClass())
+								.optional("($T) convertOne($L.getSingleResultOrNull(), $L, $L)", returnType, queryVariableName,
+										aotQuery.isNative(), convertTo) //
+								.build());
 					}
 
 				} else {
 
 					if (queryMethod.isCollectionQuery()) {
-						builder.addStatement("return ($T) $L.getResultList()", context.getReturnTypeName(), queryVariableName);
+						builder.addStatement("return ($T) $L.getResultList()", methodReturn.getTypeName(), queryVariableName);
 					} else if (queryMethod.isStreamQuery()) {
-						builder.addStatement("return ($T) $L.getResultStream()", context.getReturnTypeName(), queryVariableName);
+						builder.addStatement("return ($T) $L.getResultStream()", methodReturn.getTypeName(), queryVariableName);
 					} else if (queryMethod.isPageQuery()) {
 						builder.addStatement("return $T.getPage(($T<$T>) $L.getResultList(), $L, $L)",
-								PageableExecutionUtils.class, List.class, actualReturnType, queryVariableName,
+								PageableExecutionUtils.class, List.class, typeToRead, queryVariableName,
 								pageable, context.localVariable("countAll"));
 					} else if (queryMethod.isSliceQuery()) {
-						builder.addStatement("$T<$T> $L = $L.getResultList()", List.class, actualReturnType,
+						builder.addStatement("$T<$T> $L = $L.getResultList()", List.class, typeToRead,
 								context.localVariable("resultList"), queryVariableName);
 						builder.addStatement("boolean $L = $L.isPaged() && $L.size() > $L.getPageSize()",
 								context.localVariable("hasNext"), pageable, context.localVariable("resultList"), pageable);
@@ -756,15 +788,11 @@ class JpaCodeBlocks {
 								pageable, context.localVariable("resultList"), pageable, context.localVariable("hasNext"));
 					} else {
 
-						if (Optional.class.isAssignableFrom(context.getReturnType().toClass())) {
-							builder.addStatement("return $T.ofNullable(($T) convertOne($L.getSingleResultOrNull(), $L, $T.class))",
-									Optional.class, actualReturnType, queryVariableName, aotQuery.isNative(),
-									context.getActualReturnType().toClass());
-						} else {
-							builder.addStatement("return ($T) convertOne($L.getSingleResultOrNull(), $L, $T.class)",
-									context.getReturnTypeName(), queryVariableName, aotQuery.isNative(),
-									context.getReturnType().toClass());
-						}
+						builder.addStatement(LordOfTheStrings.returning(methodReturn.toClass())
+								.optional("($T) convertOne($L.getSingleResultOrNull(), $L, $T.class)",
+										TypeNames.typeNameOrWrapper(methodReturn.getActualType()), queryVariableName, aotQuery.isNative(),
+										TypeNames.classNameOrWrapper(methodReturn.getActualType())) //
+								.build());
 					}
 				}
 			}
@@ -779,5 +807,6 @@ class JpaCodeBlocks {
 		}
 
 	}
+
 
 }

@@ -1582,6 +1582,38 @@ class UserRepositoryTests {
 		assertThat(result).containsOnly(firstUser);
 	}
 
+	@Test // GH-3995
+	void deleteOneByShouldReturnDeletedElement() {
+
+		assertThat(repository.deleteOneByLastname(firstUser.getLastname())).isNull();
+
+		flushTestUsers();
+
+		User result = repository.deleteOneByLastname(firstUser.getLastname());
+		assertThat(result).isEqualTo(firstUser);
+	}
+
+	@Test // GH-3995
+	void deleteOneOptionalByShouldReturnDeletedElement() {
+
+		flushTestUsers();
+
+		Optional<User> result = repository.deleteOneOptionalByLastname(firstUser.getLastname());
+		assertThat(result).contains(firstUser);
+	}
+
+	@Test // GH-3995
+	void deleteOneShouldFailWhenMatchingMultipleResults() {
+
+		firstUser.setLastname("foo");
+		secondUser.setLastname("foo");
+		firstUser = repository.save(firstUser);
+		secondUser = repository.save(secondUser);
+
+		assertThatExceptionOfType(IncorrectResultSizeDataAccessException.class)
+				.isThrownBy(() -> repository.deleteOneByLastname(firstUser.getLastname()));
+	}
+
 	@Test // DATAJPA-460
 	void deleteByShouldRemoveElementsMatchingDerivedQuery() {
 
@@ -1591,12 +1623,21 @@ class UserRepositoryTests {
 		assertThat(repository.countByLastname(firstUser.getLastname())).isZero();
 	}
 
-	@Test // DATAJPA-460
+	@Test // DATAJPA-460, GH-4015
 	void deleteByShouldReturnNumberOfEntitiesRemovedIfReturnTypeIsLong() {
 
 		flushTestUsers();
 
 		assertThat(repository.removeByLastname(firstUser.getLastname())).isOne();
+		assertThat(repository.removeOneByLastname(secondUser.getLastname())).isOne();
+	}
+
+	@Test // GH-4015
+	void deleteByShouldReturnNumberOfEntitiesRemovedIfReturnTypeIsInt() {
+
+		flushTestUsers();
+
+		assertThat(repository.removeOneMoreByLastname(secondUser.getLastname())).isOne();
 	}
 
 	@Test // DATAJPA-460
@@ -3656,7 +3697,7 @@ class UserRepositoryTests {
 		String getLastname();
 	}
 
-	record UserDto(Integer id, String firstname, String lastname, String emailAddress) {
+	public record UserDto(Integer id, String firstname, String lastname, String emailAddress) {
 
 	}
 

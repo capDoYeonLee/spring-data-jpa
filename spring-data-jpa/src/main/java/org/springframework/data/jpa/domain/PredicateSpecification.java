@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 the original author or authors.
+ * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,18 +34,28 @@ import org.springframework.util.Assert;
  * <p>
  * Specifications can be composed into higher order functions from other specifications using
  * {@link #and(PredicateSpecification)}, {@link #or(PredicateSpecification)} or factory methods such as
- * {@link #allOf(Iterable)}. Composition considers whether one or more specifications contribute to the overall
- * predicate by returning a {@link Predicate} or {@literal null}. Specifications returning {@literal null} are
- * considered to not contribute to the overall predicate and their result is not considered in the final predicate.
+ * {@link #allOf(Iterable)}.
+ * <p>
+ * Composition considers whether one or more specifications contribute to the overall predicate by returning a
+ * {@link Predicate} or {@literal null}. Specifications returning {@literal null}, such as {@link #unrestricted()}, are
+ * considered to not contribute to the overall predicate, and their result is not considered in the final predicate.
  *
  * @author Mark Paluch
+ * @author Peter Aisher
  * @since 4.0
  */
 @FunctionalInterface
 public interface PredicateSpecification<T> extends Serializable {
 
 	/**
-	 * Simple static factory method to create a specification matching all objects.
+	 * Simple static factory method to create a specification which does not participate in matching. The specification
+	 * returned is {@code null}-like, and is elided in all operations.
+	 *
+	 * <pre class="code">
+	 * unrestricted().and(other) // consider only `other`
+	 * unrestricted().or(other) // consider only `other`
+	 * not(unrestricted()) // equivalent to `unrestricted()`
+	 * </pre>
 	 *
 	 * @param <T> the type of the {@link Root} the resulting {@literal PredicateSpecification} operates on.
 	 * @return guaranteed to be not {@literal null}.
@@ -113,13 +123,13 @@ public interface PredicateSpecification<T> extends Serializable {
 		return (root, builder) -> {
 
 			Predicate predicate = spec.toPredicate(root, builder);
-			return predicate != null ? builder.not(predicate) : builder.disjunction();
+			return predicate != null ? builder.not(predicate) : null;
 		};
 	}
 
 	/**
 	 * Applies an AND operation to all the given {@link PredicateSpecification}s. If {@code specifications} is empty, the
-	 * resulting {@link PredicateSpecification} will be unrestricted applying to all objects.
+	 * resulting {@link PredicateSpecification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link PredicateSpecification}s to compose.
 	 * @return the conjunction of the specifications.
@@ -133,7 +143,7 @@ public interface PredicateSpecification<T> extends Serializable {
 
 	/**
 	 * Applies an AND operation to all the given {@link PredicateSpecification}s. If {@code specifications} is empty, the
-	 * resulting {@link PredicateSpecification} will be unrestricted applying to all objects.
+	 * resulting {@link PredicateSpecification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link PredicateSpecification}s to compose.
 	 * @return the conjunction of the specifications.
@@ -148,7 +158,7 @@ public interface PredicateSpecification<T> extends Serializable {
 
 	/**
 	 * Applies an OR operation to all the given {@link PredicateSpecification}s. If {@code specifications} is empty, the
-	 * resulting {@link PredicateSpecification} will be unrestricted applying to all objects.
+	 * resulting {@link PredicateSpecification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link PredicateSpecification}s to compose.
 	 * @return the disjunction of the specifications.
@@ -162,7 +172,7 @@ public interface PredicateSpecification<T> extends Serializable {
 
 	/**
 	 * Applies an OR operation to all the given {@link PredicateSpecification}s. If {@code specifications} is empty, the
-	 * resulting {@link PredicateSpecification} will be unrestricted applying to all objects.
+	 * resulting {@link PredicateSpecification} will be {@link #unrestricted()} applying to all objects.
 	 *
 	 * @param specifications the {@link PredicateSpecification}s to compose.
 	 * @return the disjunction of the specifications.

@@ -36,6 +36,7 @@ import org.springframework.util.CollectionUtils;
  * @author Christoph Strobl
  * @author Oscar Fanchin
  * @author Mark Paluch
+ * @author TaeHyun Kang
  * @since 3.1
  */
 @SuppressWarnings({ "ConstantConditions", "DuplicatedCode", "UnreachableCode" })
@@ -44,40 +45,49 @@ class HqlQueryRenderer extends HqlBaseVisitor<QueryTokenStream> {
 	/**
 	 * Is this AST tree a {@literal subquery}?
 	 *
-	 * @return boolean
+	 * @return {@literal true} is the query is a subquery; {@literal false} otherwise.
 	 */
 	static boolean isSubquery(ParserRuleContext ctx) {
 
-		if (ctx instanceof HqlParser.SubqueryContext || ctx instanceof HqlParser.CteContext) {
-			return true;
-		} else if (ctx instanceof HqlParser.SelectStatementContext) {
-			return false;
-		} else if (ctx instanceof HqlParser.InsertStatementContext) {
-			return false;
-		} else if (ctx instanceof HqlParser.DeleteStatementContext) {
-			return false;
-		} else if (ctx instanceof HqlParser.UpdateStatementContext) {
-			return false;
-		} else {
-			return ctx.getParent() != null && isSubquery(ctx.getParent());
+		while (ctx != null) {
+
+			if (ctx instanceof HqlParser.SubqueryContext || ctx instanceof HqlParser.CteContext) {
+				return true;
+			}
+
+			if (ctx instanceof HqlParser.SelectStatementContext ||
+					ctx instanceof HqlParser.InsertStatementContext ||
+					ctx instanceof HqlParser.DeleteStatementContext ||
+					ctx instanceof HqlParser.UpdateStatementContext) {
+				return false;
+			}
+
+			ctx = ctx.getParent();
 		}
+
+		return false;
 	}
 
 	/**
 	 * Is this AST tree a {@literal set} query that has been added through {@literal UNION|INTERSECT|EXCEPT}?
 	 *
-	 * @return boolean
+	 * @return {@literal true} is the query is a set query; {@literal false} otherwise.
 	 */
 	static boolean isSetQuery(ParserRuleContext ctx) {
 
-		if (ctx instanceof HqlParser.OrderedQueryContext
-				&& ctx.getParent() instanceof HqlParser.QueryExpressionContext qec) {
-			if (qec.orderedQuery().indexOf(ctx) != 0) {
-				return true;
+		while (ctx != null) {
+
+			if (ctx instanceof HqlParser.OrderedQueryContext
+					&& ctx.getParent() instanceof HqlParser.QueryExpressionContext qec) {
+				if (qec.orderedQuery().indexOf(ctx) != 0) {
+					return true;
+				}
 			}
+
+			ctx = ctx.getParent();
 		}
 
-		return ctx.getParent() != null && isSetQuery(ctx.getParent());
+		return false;
 	}
 
 	@Override
@@ -129,6 +139,11 @@ class HqlQueryRenderer extends HqlBaseVisitor<QueryTokenStream> {
 	@Override
 	public QueryTokenStream visitCteAttributes(HqlParser.CteAttributesContext ctx) {
 		return QueryTokenStream.concat(ctx.identifier(), this::visit, TOKEN_COMMA);
+	}
+
+	@Override
+	public QueryTokenStream visitSearchSpecifications(HqlParser.SearchSpecificationsContext ctx) {
+		return QueryTokenStream.concat(ctx.searchSpecification(), this::visit, TOKEN_COMMA);
 	}
 
 	@Override

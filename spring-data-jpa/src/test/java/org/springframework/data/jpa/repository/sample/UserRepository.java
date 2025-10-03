@@ -299,8 +299,16 @@ public interface UserRepository extends JpaRepository<User, Integer>, JpaSpecifi
 	// DATAJPA-460
 	Long removeByLastname(String lastname);
 
+	long removeOneByLastname(String lastname);
+
+	int removeOneMoreByLastname(String lastname);
+
 	// DATAJPA-460
 	List<User> deleteByLastname(String lastname);
+
+	User deleteOneByLastname(String lastname);
+
+	Optional<User> deleteOneOptionalByLastname(String lastname);
 
 	/**
 	 * Explicitly mapped to a procedure with name "plus1inout" in database.
@@ -609,7 +617,7 @@ public interface UserRepository extends JpaRepository<User, Integer>, JpaSpecifi
 	Map<String, Object> findMapWithNullValues();
 
 	// DATAJPA-1307
-	@Query(value = "select * from SD_User u where u.emailAddress = ?", nativeQuery = true)
+	@Query(value = "select * from SD_#{#entityName} u where u.emailAddress = ?", nativeQuery = true)
 	User findByEmailNativeAddressJdbcStyleParameter(String emailAddress);
 
 	// DATAJPA-1334

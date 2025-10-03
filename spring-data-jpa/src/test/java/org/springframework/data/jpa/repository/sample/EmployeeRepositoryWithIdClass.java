@@ -41,4 +41,7 @@ public interface EmployeeRepositoryWithIdClass extends JpaRepository<IdClassExam
 
 	// DATAJPA-920
 	boolean existsByName(String name);
+
+	List<IdClassExampleEmployee> findAllByDepartment_DepartmentId(long departmentId);
+	List<IdClassExampleEmployee> findAllByEmpId(long empId);
 }

@@ -22,18 +22,29 @@ import org.springframework.data.repository.history.support.RevisionEntityInforma
  * {@link RevisionEntityInformation} for {@link DefaultRevisionEntity}.
  *
  * @author Oliver Gierke
+ * @author Chaedong Im
  */
-class DefaultRevisionEntityInformation implements RevisionEntityInformation {
+enum DefaultRevisionEntityInformation implements EnversRevisionEntityInformation {
 
+	INSTANCE;
+
+	@Override
 	public Class<?> getRevisionNumberType() {
 		return Integer.class;
 	}
 
+	@Override
 	public boolean isDefaultRevisionEntity() {
 		return true;
 	}
 
+	@Override
 	public Class<?> getRevisionEntityClass() {
 		return DefaultRevisionEntity.class;
+	}
+
+	@Override
+	public String getRevisionTimestampPropertyName() {
+		return "timestamp";
 	}
 }
